@@ -19,25 +19,37 @@ vim.fn.mkdir(tmpdir, "p")
 
 ---@param source string
 ---@param options MermaidOptions
----@return string|nil
-M.render = function(source, options)
+---@param callback fun(path: string|nil, err: string|nil)
+M.render = function(source, options, callback)
+  if type(callback) ~= "function" then
+    error("diagram/mermaid: callback is not a valid function")
+    return
+  end
+
   local hash = vim.fn.sha256(M.id .. ":" .. source)
-  if cache[hash] then return cache[hash] end
+  if cache[hash] then
+    callback(cache[hash], nil)
+    return
+  end
 
   local path = vim.fn.resolve(tmpdir .. "/" .. hash .. ".png")
-  if vim.fn.filereadable(path) == 1 then return path end
+  if vim.fn.filereadable(path) == 1 then
+    callback(path, nil)
+    return
+  end
 
-  if not vim.fn.executable("mmdc") then error("diagram/mermaid: mmdc not found in PATH") end
+  if not vim.fn.executable("mmdc") then
+    callback(nil, "diagram/mermaid: mmdc not found in PATH")
+    return
+  end
 
   local tmpsource = vim.fn.tempname()
   vim.fn.writefile(vim.split(source, "\n"), tmpsource)
 
   local command_parts = {
     "mmdc",
-    "-i",
-    tmpsource,
-    "-o",
-    path,
+    "-i", tmpsource,
+    "-o", path,
   }
   if options.background then
     table.insert(command_parts, "-b")
@@ -61,13 +73,13 @@ M.render = function(source, options)
   end
 
   local command = table.concat(command_parts, " ")
-  
   -- Run the command asynchronously
-  local handle
-  handle = vim.loop.spawn("sh", {
+  local handle = vim.loop.spawn("sh", {
     args = { "-c", command },
-  }, function(code, signal)
-    vim.loop.close(handle)
+  }, function(code)
+    if handle then
+      handle:close() -- Close handle if valid
+    end
     vim.defer_fn(function()
       if code == 0 then
         cache[hash] = path
@@ -78,5 +90,3 @@ M.render = function(source, options)
     end, 0)
   end)
 end
-
-return M
