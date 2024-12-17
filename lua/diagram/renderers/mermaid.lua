@@ -73,20 +73,29 @@ M.render = function(source, options, callback)
   end
 
   local command = table.concat(command_parts, " ")
+
   -- Run the command asynchronously
-  local handle = vim.loop.spawn("sh", {
+  local handle, err = vim.loop.spawn("sh", {
     args = { "-c", command },
-  }, function(code)
+  }, function(code, signal)
     if handle then
-      handle:close() -- Close handle if valid
+      handle:close()
     end
-    vim.defer_fn(function()
-      if code == 0 then
+
+    -- Defer the callback to ensure it executes after the event loop finishes
+    vim.schedule(function()
+      if code == 0 and vim.fn.filereadable(path) == 1 then
         cache[hash] = path
         callback(path, nil)
       else
-        callback(nil, "diagram/mermaid: mmdc failed to render diagram")
+        callback(nil, "diagram/mermaid: mmdc failed to render diagram with exit code " .. tostring(code))
       end
-    end, 0)
+    end)
   end)
+
+  if not handle then
+    callback(nil, "diagram/mermaid: Failed to start mmdc process: " .. tostring(err))
+  end
 end
+
+return M
