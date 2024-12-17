@@ -2,6 +2,8 @@
 ---@field background? string
 ---@field theme? string
 ---@field scale? number
+---@field width? number
+---@field height? number
 
 ---@type table<string, string>
 local cache = {} -- session cache
@@ -59,14 +61,22 @@ M.render = function(source, options)
   end
 
   local command = table.concat(command_parts, " ")
-  vim.fn.system(command)
-  if vim.v.shell_error ~= 0 then
-    vim.notify("diagram/mermaid: mmdc failed to render diagram", vim.log.levels.ERROR)
-    return nil
-  end
-
-  cache[hash] = path
-  return path
+  
+  -- Run the command asynchronously
+  local handle
+  handle = vim.loop.spawn("sh", {
+    args = { "-c", command },
+  }, function(code, signal)
+    vim.loop.close(handle)
+    vim.defer_fn(function()
+      if code == 0 then
+        cache[hash] = path
+        callback(path, nil)
+      else
+        callback(nil, "diagram/mermaid: mmdc failed to render diagram")
+      end
+    end, 0)
+  end)
 end
 
 return M
